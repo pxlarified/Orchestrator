@@ -8,8 +8,6 @@ function subscription(channel, listener) {
 
 contextBridge.exposeInMainWorld("codexWebLauncher", {
   snapshot: () => ipcRenderer.invoke("launcher:snapshot"),
-  getLimits: () => ipcRenderer.invoke("launcher:limits"),
-  setupLimits: () => ipcRenderer.invoke("launcher:limits-setup"),
   setLanguage: (language) => ipcRenderer.invoke("launcher:set-language", language),
   openExternal: (url) => ipcRenderer.invoke("launcher:open-external", url),
   setBrowserBounds: (bounds) => ipcRenderer.invoke("launcher:browser-bounds", bounds),

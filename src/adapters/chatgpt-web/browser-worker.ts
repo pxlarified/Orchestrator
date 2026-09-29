@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { skillFileTokens, validateSkillFiles } from "./skill-attachments";
-import { detectChatGptLimitsPlan, readChatGptUsageAccount, readChatGptUsageModel, supportsChatGptUsageTracking, type ChatGptUsageModel } from "./limits";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page, type Request, type Response } from "playwright-core";
 import {
   atomicWriteFile,
@@ -871,7 +870,6 @@ export class ChatGptSubmissionRejectionObserver {
 type SelectedChatGptWebModelMode = ChatGptWebModelMode & {
   modelFamily?: "5.6" | "6";
   selection?: { url: string; label: string };
-  usageModel?: ChatGptUsageModel;
 };
 
 export async function throwIfChatGptTerminalErrorAlert(scope: ChatGptTextScope): Promise<void> {
@@ -2322,14 +2320,6 @@ export class ChatGptBrowserWorker {
     return this.enqueueMaintenance("smoke test", () => this.smokeTestExclusive(abortSignal));
   }
 
-  inspectLimitsPlan() {
-    return this.enqueueMaintenance("Limits setup", async () => {
-      const page = await this.ensurePage();
-      await this.prepareChatSurface(page);
-      return detectChatGptLimitsPlan(page);
-    });
-  }
-
   private enqueueMaintenance<T>(name: string, action: () => Promise<T>): Promise<T> {
     const operation = this.maintenanceTail.then(() => {
       if (this.activeRuns.size > 0) {
@@ -2485,7 +2475,6 @@ export class ChatGptBrowserWorker {
     reasoning: string | undefined,
     capabilities: ChatGptWebCapabilities,
     captureDiagnostic?: (checkpoint: string) => Promise<void>,
-    trackUsage = false,
     modelFamily?: "5.6" | "6",
   ): Promise<SelectedChatGptWebModelMode> {
     const mode = resolveChatGptWebModelMode(modelId, reasoning, capabilities);
@@ -2632,12 +2621,6 @@ export class ChatGptBrowserWorker {
       throw chatGptModelControlUnavailableAdapterError("ChatGPT did not persist the requested effort after closing its menu");
     }
     if (modelFamily) await assertChatGptModelFamily(confirmation, modelFamily, mode.effort, uiEffortIndex, 1_000);
-    // A bare 'Pro' trigger does not identify the family selected by ChatGPT's Latest option.
-    // Unknown evidence remains visible as unclassified Pro usage in Limits.
-    if (trackUsage) {
-      selectedMode.usageModel = await readChatGptUsageModel(confirmation.slider, mode.effort === "max")
-        .catch(() => mode.effort === "max" ? "pro-unknown" as const : "other" as const);
-    }
     await page.keyboard.press("Escape");
     await settleChatGptUi();
     await this.assertSelectedEffort(page, selectedMode, false);
@@ -4657,7 +4640,7 @@ export class ChatGptBrowserWorker {
       await turn.onPreparedSelected?.(reused);
       heartbeatTimer = setInterval(sendHeartbeat, LAUNCHER_TURN_HEARTBEAT_INTERVAL_MS);
       heartbeatTimer.unref?.();
-      return await this.runBrowserTurn(turn, surfaceId, undefined, reused, lease.trackUsage === true);
+      return await this.runBrowserTurn(turn, surfaceId, undefined, reused);
     } catch (error) {
       originalError = error;
       terminal = error instanceof ChatGptCompactionHandoffAccepted
@@ -4707,7 +4690,6 @@ export class ChatGptBrowserWorker {
     launcherSurfaceId?: string,
     maintenancePage?: Page,
     reuseConversation = false,
-    trackUsage = false,
   ): Promise<string> {
     if (turn.abortSignal?.aborted) throw new DOMException("ChatGPT web turn aborted", "AbortError");
     if ((turn.externalProgress !== undefined) !== (turn.completionFence !== undefined)) {
@@ -4734,7 +4716,6 @@ export class ChatGptBrowserWorker {
     let turnConnection: Browser | undefined;
     let managedPage: Page | undefined;
     let diagnosticPage: Page | undefined;
-    const usageWrites: Promise<void>[] = [];
     const submissionRejection = new ChatGptSubmissionRejectionObserver();
     try {
       if (turn.abortSignal?.aborted) throw new DOMException("ChatGPT web turn aborted", "AbortError");
@@ -4965,47 +4946,18 @@ export class ChatGptBrowserWorker {
           stagingMode.effort,
           browserCapabilities,
           checkpoint => diagnostics.capture(page, checkpoint),
-          trackUsage,
           turn.modelFamily,
         )
       );
       let mode = await this.runStage(turn.traceId, "effort_selection", browserStageTimeouts.effortSelection, selectStagingMode);
       await diagnostics.capture(page, "effort-selection-complete");
 
-      // One receipt per physical Send, not per native tool call or stream attachment.
-      // The ID survives observation recovery; a new actual Send receives a new ID.
-      const usageSubmission = async () => {
-        if (!trackUsage) return undefined;
-        const id = randomUUID();
-        let accountKey: string | undefined;
-        try {
-          const account = await readChatGptUsageAccount(page);
-          if (supportsChatGptUsageTracking(account)) accountKey = account.accountKey;
-        } catch {
-          // A missing identity is reported as a tracking gap, never charged to the previous account.
-        }
-        const model = mode.usageModel ?? (mode.effort === "max" ? "pro-unknown" : "other");
-        return () => {
-          // Do not spend the Send observation deadline waiting for optional local accounting.
-          // Drain these bounded writes before releasing this turn's launcher lease.
-          const write = notifyLauncherTurn(this.config.browserHostDescriptorPath!, {
-            phase: "usage", traceId: turn.traceId, helperPid: process.pid,
-            ...(accountKey ? { receipt: { id, accountKey, model, at: Date.now() } }
-              : { trackingError: "account-unavailable" as const }),
-          }).then(() => {}, () => {
-            // Approximate accounting must not turn an already accepted model message into a retry.
-            console.warn(`[chatgpt-web] Limits could not persist a submission receipt for ${turn.traceId}`);
-          });
-          usageWrites.push(write);
-        };
-      };
-
       let finalPrompt = prepared.text;
       if (prepared.multipart && multipartStages && multipartTransactionId && multipartFinalPrompt) {
         for (let index = 0; index < multipartStages.length; index += 1) {
           const stage = multipartStages[index]!;
           // Each acknowledgement can replace the picker controls. Establish a fresh model/effort
-          // proof for the next physical submission, retaining family selection and usage evidence.
+          // proof for the next physical submission, retaining family selection.
           if (index > 0) mode = await this.runStage(
             turn.traceId, `multipart_stage_${index + 1}_effort_selection`,
             browserStageTimeouts.effortSelection, selectStagingMode,
@@ -5026,7 +4978,6 @@ export class ChatGptBrowserWorker {
             true,
           );
           await diagnostics.capture(page, `multipart-stage-${index + 1}-attachment-complete`);
-          const recordStageUsage = await usageSubmission();
           const evidence = await this.runStage(
             turn.traceId,
             `multipart_stage_${index + 1}_send`,
@@ -5037,7 +4988,7 @@ export class ChatGptBrowserWorker {
               checkpoint => diagnostics.capture(page, `multipart-${index + 1}-${checkpoint}`),
               turn.abortSignal ? AbortSignal.any([stageSignal, turn.abortSignal]) : stageSignal,
               undefined,
-              { onSubmitted: recordStageUsage, onSendActivated: async () => {
+              { onSendActivated: async () => {
                 await this.assertSelectedEffort(page, mode);
                 submissionRejection.begin(page);
               } },
@@ -5110,7 +5061,6 @@ export class ChatGptBrowserWorker {
               requestedMode.effort,
               browserCapabilities,
               checkpoint => diagnostics.capture(page, `final-part-${checkpoint}`),
-              trackUsage,
               turn.modelFamily,
             ),
           );
@@ -5171,7 +5121,6 @@ export class ChatGptBrowserWorker {
                 turn.reasoning,
                 turn.capabilities,
                 checkpoint => diagnostics.capture(page, checkpoint),
-                trackUsage,
                 turn.modelFamily,
               );
               submissionBaseline = await this.captureSubmissionBaseline(page, finalPrompt);
@@ -5186,7 +5135,6 @@ export class ChatGptBrowserWorker {
       ));
       await diagnostics.capture(page, "file-attachment-complete");
       const completionTracker = new ChatGptCompletionTracker();
-      const recordFinalUsage = await usageSubmission();
       const finalSubmissionEvidence = await this.runStage(
         turn.traceId,
         "send",
@@ -5199,10 +5147,7 @@ export class ChatGptBrowserWorker {
           checkpoint => diagnostics.capture(page, checkpoint),
           turn.abortSignal ? AbortSignal.any([stageSignal, turn.abortSignal]) : stageSignal,
           turn.externalProgress,
-          { ...turn, onSubmitted: () => {
-            recordFinalUsage?.();
-            return turn.onSubmitted?.();
-          }, onSendActivated: async () => {
+          { ...turn, onSendActivated: async () => {
             await this.assertSelectedEffort(page, mode);
             submissionRejection.begin(page);
             await turn.onSendActivated?.();
@@ -5549,7 +5494,6 @@ export class ChatGptBrowserWorker {
       throw error;
     } finally {
       submissionRejection.dispose();
-      await Promise.all(usageWrites);
       prepared.release();
       if (turnConnection) {
         await turnConnection.close().catch(error => {

@@ -358,18 +358,6 @@ export const LAUNCHER_CAPABILITY_INSPECTION_TIMEOUT_MS = 120_000;
 
 export type LauncherTurnActivity =
   | {
-      phase: "usage";
-      traceId: string;
-      helperPid: number;
-      receipt?: {
-        id: string;
-        accountKey: string;
-        model: "gpt-6-pro" | "gpt-5.6-pro" | "pro-unknown" | "other";
-        at: number;
-      };
-      trackingError?: "account-unavailable";
-    }
-  | {
       phase: "start";
       traceId: string;
       helperPid: number;
@@ -637,7 +625,6 @@ export async function notifyLauncherTurn(
   connectorBound?: boolean;
   cancelledByUser?: boolean;
   authenticationRequired?: boolean;
-  trackUsage?: boolean;
 }> {
   const descriptor = readLauncherBrowserHostDescriptor(descriptorPath);
   const controller = new AbortController();
@@ -682,7 +669,6 @@ export async function notifyLauncherTurn(
         surfaceId: body.surfaceId,
         reused: body.reused,
         connectorBound: body.connectorBound,
-        trackUsage: body.trackUsage === true,
       };
     }
     if (activity.phase === "end") {

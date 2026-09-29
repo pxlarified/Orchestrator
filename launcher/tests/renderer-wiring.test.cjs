@@ -30,7 +30,6 @@ test("Bigger Context waits for startup and route recovery without invalidating h
       ipcMain: { on() {} }, registerLoggedIpc: (_ipc, _logger, channel, handler) => handlers.set(channel, handler),
       send() {}, publishOperation() {}, startCatalogVerificationMonitor() {},
       restoreCodexRouteAfterRuntimeFailure: async () => { calls.push("recovery"); return {}; },
-      limitsController: { snapshot: () => ({ enabled: false }) },
       runtimeSupervisor: {
         readConfig: () => config,
         startIfConfigured: async () => {
@@ -56,8 +55,6 @@ test("Bigger Context waits for startup and route recovery without invalidating h
     const start = electronMain.indexOf("} else void (async () => {");
     vm.runInContext(electronMain.slice(start + "} else ".length, electronMain.indexOf('  app.on("before-quit"', start)), context);
     const setting = handlers.get("launcher:bigger-context")({}, true);
-    // Read-only UI remains usable while authentication/startup is pending.
-    assert.equal((await handlers.get("launcher:limits")()).enabled, false);
     assert.deepEqual(calls, []);
     completeAuthentication();
     await setting;
