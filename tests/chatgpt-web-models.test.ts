@@ -3,6 +3,7 @@ import { chatGptConversationKey } from "../src/adapters/chatgpt-web/conversation
 import {
   availableChatGptWebModelRoutes,
   CHATGPT_WEB_BACKEND_MODEL,
+  CHATGPT_WEB_LUNA_MODEL_CONTEXT_WINDOW,
   CHATGPT_WEB_LUNA_BACKEND_MODEL,
   CHATGPT_WEB_LUNA_MODEL_ROUTE,
   CHATGPT_WEB_LEGACY_LUNA_MODEL_ROUTE,
@@ -15,8 +16,11 @@ import {
   CHATGPT_WEB_ZERO_RISK_PRO_BACKEND_MODEL,
   CHATGPT_WEB_ZERO_RISK_PRO_MODEL_ROUTE,
   CHATGPT_WEB_MODEL_ROUTES,
+  CHATGPT_WEB_SOL_MODEL_AUTO_COMPACT_TOKEN_LIMIT,
+  CHATGPT_WEB_SOL_MODEL_CONTEXT_WINDOW,
   requireChatGptWebModelRoute,
   resolveChatGptWebContextLimits,
+  resolveChatGptWebModelContextLimits,
   resolveChatGptWebTransportLimits,
 } from "../src/chatgpt-web-models";
 import { defaultConfig } from "../src/config";
@@ -204,7 +208,7 @@ describe("fixed ChatGPT Web model routes", () => {
     });
   });
 
-  test("publishes Luna's real model window without early native compaction", () => {
+  test("keeps Luna's checkpoint task budget separate from its browser request envelope", () => {
     expect(resolveChatGptWebContextLimits(CHATGPT_WEB_LUNA_BACKEND_MODEL, "low", {
       solAvailable: false,
       extraHighAvailable: false, proAvailable: false,
@@ -212,6 +216,29 @@ describe("fixed ChatGPT Web model routes", () => {
       contextWindow: 1_050_000,
       effectiveContextWindowPercent: 100,
       autoCompactTokenLimit: 1_050_000,
+    });
+  });
+
+  test("publishes the actual GPT-5.6 model windows independently of browser transport limits", () => {
+    for (const [effort, capabilities] of [
+      ["low", plus],
+      ["high", plus],
+      ["max", pro],
+      ["max", { ...pro, experimentalBiggerContext: true }],
+    ] as const) {
+      expect(resolveChatGptWebModelContextLimits(CHATGPT_WEB_BACKEND_MODEL, effort, capabilities)).toEqual({
+        contextWindow: CHATGPT_WEB_SOL_MODEL_CONTEXT_WINDOW,
+        effectiveContextWindowPercent: 90,
+        autoCompactTokenLimit: CHATGPT_WEB_SOL_MODEL_AUTO_COMPACT_TOKEN_LIMIT,
+      });
+    }
+    expect(resolveChatGptWebModelContextLimits(CHATGPT_WEB_LUNA_BACKEND_MODEL, "low", {
+      solAvailable: false,
+      extraHighAvailable: false, proAvailable: false,
+    })).toEqual({
+      contextWindow: CHATGPT_WEB_LUNA_MODEL_CONTEXT_WINDOW,
+      effectiveContextWindowPercent: 100,
+      autoCompactTokenLimit: CHATGPT_WEB_LUNA_MODEL_CONTEXT_WINDOW,
     });
   });
 

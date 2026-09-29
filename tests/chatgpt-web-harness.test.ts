@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildResponseJSON } from "../src/bridge";
-import { ChatGptWebAdapterError, chatGptStoppedThinkingError } from "../src/adapters/chatgpt-web/adapter-error";
+import { ChatGptWebAdapterError, chatGptBrowserInputLimitError, chatGptStoppedThinkingError } from "../src/adapters/chatgpt-web/adapter-error";
 import { ChatGptCompletionTracker, chatGptImageFilePayloads, chatGptPromptFilePayloads, chatGptTurnIsComplete } from "../src/adapters/chatgpt-web/browser-worker";
 import { ChatGptBrowserWorker, type BrowserTurn } from "../src/adapters/chatgpt-web/browser-worker";
 import { chatGptConversationKey } from "../src/adapters/chatgpt-web/conversation-key";
@@ -1237,6 +1237,81 @@ describe("ChatGPT outer-native harness v4", () => {
       expect(events.some(event => event.type === "done")).toBeFalse();
     } finally {
       worker.run = originalRun;
+      await TurnBroker.forSocket(socketPath).close();
+    }
+  });
+
+  test("an oversized physical browser message requests native compaction before another send", async () => {
+    const socketPath = brokerTestEndpoint(`cgw-browser-input-compact-${process.pid}-${Date.now()}`);
+    const provider: CodexProviderConfig = {
+      adapter: "chatgpt-web",
+      baseUrl: `browser://chatgpt-browser-input-compact-${Date.now()}`,
+      chatgptWeb: { brokerSocketPath: socketPath, localToolsEnabled: false, solAvailable: true, extraHighAvailable: true, proAvailable: true },
+    };
+    const worker = ChatGptBrowserWorker.forProvider(provider);
+    const originalRun = worker.run.bind(worker);
+    let browserStarts = 0;
+    (worker as unknown as { run: (turn: BrowserTurn) => Promise<string> }).run = async () => {
+      browserStarts += 1;
+      throw chatGptBrowserInputLimitError("browser message reached 80,000 characters");
+    };
+    try {
+      const events: AdapterEvent[] = [];
+      await createChatGptWebAdapter(provider).runTurn!(
+        rawWireRequest(environmentXml),
+        { headers: new Headers() },
+        event => events.push(event),
+      );
+      expect(browserStarts).toBe(1);
+      expect(events.at(-1)).toMatchObject({
+        type: "done",
+        stopReason: "stop",
+        endTurn: false,
+        usage: { inputTokens: 244_800, outputTokens: 0, totalTokens: 244_800, estimated: true },
+      });
+      expect(events.some(event => event.type === "error")).toBeFalse();
+    } finally {
+      (worker as unknown as { run: (turn: BrowserTurn) => Promise<string> }).run = originalRun;
+      await TurnBroker.forSocket(socketPath).close();
+    }
+  });
+
+  test("an oversized native compaction request fails without recursively compacting", async () => {
+    const socketPath = brokerTestEndpoint(`cgw-browser-input-compact-recursion-${process.pid}-${Date.now()}`);
+    const provider: CodexProviderConfig = {
+      adapter: "chatgpt-web",
+      baseUrl: `browser://chatgpt-browser-input-compact-recursion-${Date.now()}`,
+      chatgptWeb: { brokerSocketPath: socketPath, localToolsEnabled: false, solAvailable: true, extraHighAvailable: true, proAvailable: true },
+    };
+    const worker = ChatGptBrowserWorker.forProvider(provider);
+    const originalRun = worker.run.bind(worker);
+    let browserStarts = 0;
+    (worker as unknown as { run: (turn: BrowserTurn) => Promise<string> }).run = async () => {
+      browserStarts += 1;
+      throw chatGptBrowserInputLimitError("compaction browser message reached 80,000 characters");
+    };
+    try {
+      const request = rawWireRequest(environmentXml);
+      request._compactionRequest = true;
+      const events: AdapterEvent[] = [];
+      await createChatGptWebAdapter(provider).runTurn!(
+        request,
+        { headers: new Headers() },
+        event => events.push(event),
+      );
+      expect(browserStarts).toBe(1);
+      expect(events.at(-1)).toMatchObject({
+        type: "error",
+        status: 400,
+        errorType: "invalid_request_error",
+        code: "context_length_exceeded",
+        retryable: false,
+      });
+      expect((events.at(-1) as Extract<AdapterEvent, { type: "error" }>).message)
+        .toContain("automatic compaction request");
+      expect(events.some(event => event.type === "done" && event.endTurn === false)).toBeFalse();
+    } finally {
+      (worker as unknown as { run: (turn: BrowserTurn) => Promise<string> }).run = originalRun;
       await TurnBroker.forSocket(socketPath).close();
     }
   });

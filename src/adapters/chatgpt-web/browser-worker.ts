@@ -74,6 +74,7 @@ import {
   notifyLauncherTurn,
 } from "../../launcher-browser-host";
 import {
+  CHATGPT_WEB_BROWSER_AUTO_COMPACT_CHAR_LIMIT,
   CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER,
   resolveChatGptWebContextLimits,
   resolveChatGptWebMessageTokenBudget,
@@ -85,6 +86,7 @@ import { MAX_CHATGPT_BROWSER_TABS } from "./concurrency";
 import {
   ChatGptCompactionHandoffAccepted,
   ChatGptWebAdapterError,
+  chatGptBrowserInputLimitError,
   chatGptBrowserTabClosedError,
   chatGptRetainedConversationUnavailableError,
   chatGptStoppedThinkingError,
@@ -973,6 +975,17 @@ export function assertChatGptWebInputWithinLimits(
   throw new ChatGptWebAdapterError(
     `This task is estimated at ${estimatedInputTokens.toLocaleString("en-US")} input tokens, which exceeds the ${contextWindow.toLocaleString("en-US")}-token context window for this ChatGPT Web model. Switch to a model with a larger context window, run /compact, then retry this Web model.`,
     { status: 400, errorType: "invalid_request_error", code: "context_length_exceeded", retryable: false },
+  );
+}
+
+/** Trigger native compaction only when an actual physical browser message is about to be sent. */
+export function assertChatGptWebBrowserMessageWithinAutoCompactBoundary(
+  messageChars: number,
+  label = "browser message",
+): void {
+  if (messageChars < CHATGPT_WEB_BROWSER_AUTO_COMPACT_CHAR_LIMIT) return;
+  throw chatGptBrowserInputLimitError(
+    `The ${label} contains ${messageChars.toLocaleString("en-US")} characters and reached the ${CHATGPT_WEB_BROWSER_AUTO_COMPACT_CHAR_LIMIT.toLocaleString("en-US")}-character auto-compaction boundary.`,
   );
 }
 
@@ -4744,6 +4757,12 @@ export class ChatGptBrowserWorker {
       const maxStageChars = multipartStages
         ? Math.max(...multipartStages.map(stage => stage.text.length))
         : undefined;
+      if (multipartStages && multipartFinalPrompt && maxStageChars !== undefined) {
+        assertChatGptWebBrowserMessageWithinAutoCompactBoundary(maxStageChars, "Bigger Context stage");
+        assertChatGptWebBrowserMessageWithinAutoCompactBoundary(multipartFinalPrompt.length, "Bigger Context final part");
+      } else {
+        assertChatGptWebBrowserMessageWithinAutoCompactBoundary(maxMessageChars);
+      }
       const stagingMode = multipartStages
         ? resolveChatGptWebMultipartStagingMode(
           turn.modelId,

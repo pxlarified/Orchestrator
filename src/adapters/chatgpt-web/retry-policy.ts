@@ -3,6 +3,7 @@ import { ChatGptWebAdapterError } from "./adapter-error";
 /** Maximum number of automatic browser-turn retries after the initial send. */
 export const MAX_CHATGPT_WEB_TURN_RETRIES = 3;
 const RETRY_BUDGET_TTL_MS = 30 * 60_000;
+const INPUT_COMPACTION_TTL_MS = 30 * 60_000;
 
 interface RetryBudgetEntry {
   retries: number;
@@ -71,3 +72,29 @@ export class ChatGptWebTurnRetryPolicy {
 }
 
 export const chatGptWebTurnRetryPolicy = new ChatGptWebTurnRetryPolicy();
+
+/** One automatic native compaction attempt per logical Codex turn. */
+export class ChatGptWebInputCompactionPolicy {
+  private readonly entries = new Map<string, number>();
+
+  constructor(private readonly ttlMs = INPUT_COMPACTION_TTL_MS) {}
+
+  request(key: string, now = Date.now()): boolean {
+    this.prune(now);
+    if (this.entries.has(key)) return false;
+    this.entries.set(key, now);
+    return true;
+  }
+
+  clear(key: string): void {
+    this.entries.delete(key);
+  }
+
+  private prune(now: number): void {
+    for (const [key, updatedAt] of this.entries) {
+      if (now - updatedAt >= this.ttlMs) this.entries.delete(key);
+    }
+  }
+}
+
+export const chatGptWebInputCompactionPolicy = new ChatGptWebInputCompactionPolicy();

@@ -141,14 +141,21 @@ The pasted task carries one opaque `request_id` for routing concurrent requests.
 sequencing lives in the Zero Risk MCP server metadata, not in user-authored imperative text; the
 per-tab nonce used to validate the Launcher confirmation never leaves the local runtime.
 
-The appended models advertise the authenticated account's context window and a ten-percent
-auto-compaction reserve. Usage is counted with the GPT-5 tokenizer plus fixed platform/image
-reserves, rather than inferred from character length. The ChatGPT composer also has an independent
-inline-size boundary: usage accounting asks Codex to compact before that boundary, and a prompt
-that still exceeds the proven hard ceiling fails explicitly before any browser turn opens.
+The appended GPT-5.6 models advertise their actual model windows independently of browser transport:
+Sol uses a 272,000-token window with native compaction at 244,800 tokens, while Luna uses its
+128,000-token model window. Usage is counted with the GPT-5 tokenizer plus fixed platform/image
+reserves, rather than inferred from character length. Browser request, message-token, and composer
+ceilings remain separate adapter limits.
+
+Immediately before a new physical browser message is sent, a compiled message of 80,000 characters
+or more requests native Codex compaction first. This boundary is evaluated per physical Bigger
+Context stage and final message. Work that continues inside the same ChatGPT response/tool loop does
+not hit that browser-send boundary and can continue up to the normal model context window. If the
+compaction request itself cannot fit, the turn fails with `context_length_exceeded` instead of
+recursively requesting another compaction.
 Top-level `model_context_window` raises only the proxied native rows' advertised maximum, allowing
 Codex to apply its own configured context override without clamping. Routed ChatGPT Web models
-retain their measured adapter-owned limits.
+retain their model-owned limits.
 
 **Save chats in ChatGPT** (`setup --saved-chats`; `--temporary-chats` restores the default)
 uses ordinary saved conversations for task turns in Automatic and Zero Risk modes. This is
@@ -171,8 +178,8 @@ composer budgets. Inert stages carry text; the final message also carries all re
 the execution contract and any output schema. Their reserves are deducted before partitioning,
 then preflight checks the actual compiled messages and total transaction. The selected execution
 effort and attachment references remain unchanged. Large transactions use up to six messages;
-the advertised context and compaction thresholds remain three times the base limits. More parts
-reduce message size, not the amount of history retained.
+the extra transport capacity does not inflate the advertised model context or native compaction
+threshold. More parts reduce message size, not the amount of history retained.
 
 In Full mode, routed compaction v1/v2 uses the exact retained source agent and a one-shot MCP control
 capability that accepts only the bound checkpoint; it cannot claim or invoke the ordinary Codex tool

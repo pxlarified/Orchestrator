@@ -22,6 +22,23 @@ export class ChatGptWebAdapterError extends Error {
   }
 }
 
+/** Internal pre-submit signal: one physical browser message reached the auto-compaction boundary. */
+export const CHATGPT_BROWSER_INPUT_LIMIT_ERROR_CODE = "chatgpt_browser_input_limit";
+
+export function chatGptBrowserInputLimitError(message: string): ChatGptWebAdapterError {
+  return new ChatGptWebAdapterError(message, {
+    status: 400,
+    errorType: "invalid_request_error",
+    code: CHATGPT_BROWSER_INPUT_LIMIT_ERROR_CODE,
+    retryable: false,
+  });
+}
+
+export function isChatGptBrowserInputLimitError(error: unknown): error is ChatGptWebAdapterError {
+  return error instanceof ChatGptWebAdapterError
+    && error.code === CHATGPT_BROWSER_INPUT_LIMIT_ERROR_CODE;
+}
+
 // Only the compaction owner may signal this after the broker accepts its one-shot handoff.
 // It cancels browser observation, while the accepted summary remains the native result.
 export class ChatGptCompactionHandoffAccepted extends DOMException {

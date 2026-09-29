@@ -20,6 +20,15 @@ export type ChatGptWebCodexEffort = "low" | "medium" | "high" | "xhigh" | "max" 
 export type ChatGptWebAdapterEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type ChatGptWebModelFamily = "5.6" | "6";
 
+/** Actual ChatGPT model windows. Browser transport/task budgets are tracked separately. */
+export const CHATGPT_WEB_SOL_MODEL_CONTEXT_WINDOW = 272_000;
+export const CHATGPT_WEB_LUNA_MODEL_CONTEXT_WINDOW = 128_000;
+export const CHATGPT_WEB_MODEL_AUTO_COMPACT_PERCENT = 90;
+export const CHATGPT_WEB_SOL_MODEL_AUTO_COMPACT_TOKEN_LIMIT =
+  Math.floor((CHATGPT_WEB_SOL_MODEL_CONTEXT_WINDOW * CHATGPT_WEB_MODEL_AUTO_COMPACT_PERCENT) / 100);
+/** Compact before compiling a new physical ChatGPT browser message at this boundary. */
+export const CHATGPT_WEB_BROWSER_AUTO_COMPACT_CHAR_LIMIT = 80_000;
+
 /**
  * Measured Plus browser transport windows, including the fixed hidden ChatGPT platform reserve.
  * Codex compacts the visible task at the lower explicit threshold before the next browser turn is
@@ -70,12 +79,10 @@ export const CHATGPT_WEB_PRO_INSTANT_COMPOSER_CHAR_LIMIT = 545_000;
 // Instant and the Pro model have different bounds, not this reasoning-mode ceiling.
 export const CHATGPT_WEB_PRO_REASONING_COMPOSER_CHAR_LIMIT = 500_000;
 export const CHATGPT_WEB_PRO_MODEL_COMPOSER_CHAR_LIMIT = 1_635_000;
-/**
- * The underlying Luna model owns this context window. ChatGPT Free's much smaller browser request
- * envelope is enforced separately at the browser boundary; rolling checkpoints keep completed
- * history out of later browser requests without asking Codex to compact its canonical history.
- */
-export const CHATGPT_WEB_LUNA_CONTEXT_WINDOW = 1_050_000;
+/** Synthetic Codex task budget for Luna checkpoint continuity, separate from its model window. */
+export const CHATGPT_WEB_LUNA_CHECKPOINT_TASK_WINDOW = 1_050_000;
+/** @deprecated Use CHATGPT_WEB_LUNA_CHECKPOINT_TASK_WINDOW for practical task accounting. */
+export const CHATGPT_WEB_LUNA_CONTEXT_WINDOW = CHATGPT_WEB_LUNA_CHECKPOINT_TASK_WINDOW;
 export const CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER = 3;
 
 export interface ChatGptWebContextLimits {
@@ -109,7 +116,7 @@ function contextLimits(
   };
 }
 
-/** Resolve the product limit for the selected visible ChatGPT mode. */
+/** Resolve the practical browser/task limit for the selected visible ChatGPT mode. */
 export function resolveChatGptWebContextLimits(
   backendModel: ChatGptWebBackendModel,
   effort: ChatGptWebAdapterEffort,
@@ -163,6 +170,21 @@ export function resolveChatGptWebContextLimits(
     limits.contextWindow * CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER,
     limits.autoCompactTokenLimit * CHATGPT_WEB_BIGGER_CONTEXT_MULTIPLIER,
   );
+}
+
+/** Keep browser transport limits out of Codex's model-level context accounting. */
+export function resolveChatGptWebModelContextLimits(
+  backendModel: ChatGptWebBackendModel,
+  effort: ChatGptWebAdapterEffort,
+  capabilities: ChatGptWebAccountCapabilities,
+): ChatGptWebContextLimits {
+  if (isChatGptWebZeroRiskBackendModel(backendModel)) {
+    return resolveChatGptWebContextLimits(backendModel, effort, capabilities);
+  }
+  if (backendModel === CHATGPT_WEB_LUNA_BACKEND_MODEL) {
+    return contextLimits(CHATGPT_WEB_LUNA_MODEL_CONTEXT_WINDOW, CHATGPT_WEB_LUNA_MODEL_CONTEXT_WINDOW);
+  }
+  return contextLimits(CHATGPT_WEB_SOL_MODEL_CONTEXT_WINDOW, CHATGPT_WEB_SOL_MODEL_AUTO_COMPACT_TOKEN_LIMIT);
 }
 
 /** Resolve limits of one visible ChatGPT composer message, independently of model context. */
