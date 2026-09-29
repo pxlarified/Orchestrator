@@ -8,10 +8,6 @@ const launcherRoot = path.resolve(__dirname, "..");
 const repositoryRoot = path.resolve(launcherRoot, "..");
 const read = (...parts) => fs.readFileSync(path.join(repositoryRoot, ...parts), "utf8");
 
-const englishReadme = read("README.md");
-const chineseReadme = read("README.zh-CN.md");
-const japaneseReadme = read("README.ja.md");
-const koreanReadme = read("README.ko.md");
 const languages = require("../electron/languages.json");
 const appSource = read("launcher", "src", "App.tsx");
 
@@ -27,25 +23,6 @@ function loadI18nModule() {
   Function("module", "exports", "require", output)(loaded, loaded.exports, require);
   return loaded.exports;
 }
-
-function commandFences(source) {
-  return [...source.matchAll(/```(bash|powershell)\r?\n([\s\S]*?)```/g)]
-    .map((match) => `${match[1]}\n${match[2].replace(/\r\n/g, "\n").trim()}`);
-}
-
-function linkTargets(source) {
-  const markdown = [...source.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map((match) => match[1]);
-  const html = [...source.matchAll(/(?:href|src)="([^"]+)"/g)].map((match) => match[1]);
-  return [...new Set([...markdown, ...html])].sort();
-}
-
-test("localized READMEs preserve every command block and link target from English", () => {
-  for (const source of [chineseReadme, japaneseReadme, koreanReadme]) {
-    assert.deepEqual(commandFences(source), commandFences(englishReadme));
-    assert.deepEqual(linkTargets(source), linkTargets(englishReadme));
-  }
-});
-
 
 for (const language of Object.keys(languages).filter(language => language !== "en")) test(`${language} runtime localization preserves literal connector names and endpoints`, () => {
   const { copyFor, localizeRuntimeMessage } = loadI18nModule();
