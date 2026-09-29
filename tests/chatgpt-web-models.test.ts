@@ -47,16 +47,17 @@ describe("fixed ChatGPT Web model routes", () => {
       ["chatgpt-web/pro", "ultra", "max"],
     ]);
     expect(CHATGPT_WEB_MODEL_ROUTES.map(route => route.displayName)).toEqual([
-      "GPT-5.6 Sol Instant (Web)", "GPT-5.6 Sol (Web)", "GPT-5.6 Pro (Web)", "GPT-6 Pro (Web)",
+      "GPT-5.6 Sol (Web)", "GPT-5.6 Pro (Web)", "GPT-6 Pro (Web)",
     ]);
     expect(CHATGPT_WEB_LUNA_MODEL_ROUTE.displayName).toBe("GPT-5.6 Luna (Web)");
   });
 
   test("exposes only Plus-eligible routes without the Pro account capability", () => {
     expect(availableChatGptWebModelRoutes(plus).map(route => route.slug)).toEqual([
-      "chatgpt-web/gpt-5.6-sol-instant",
       "chatgpt-web/gpt-5.6-sol",
     ]);
+    expect(requireChatGptWebModelRoute("chatgpt-web/gpt-5.6-sol", plus, "low").adapterEffort).toBe("low");
+    expect(requireChatGptWebModelRoute("chatgpt-web/gpt-5.6-sol-instant", plus).adapterEffort).toBe("low");
     expect(availableChatGptWebModelRoutes({ solAvailable: true, extraHighAvailable: true, proAvailable: true }))
       .toEqual(CHATGPT_WEB_MODEL_ROUTES);
     expect(() => requireChatGptWebModelRoute("chatgpt-web/extra-high", plus))
@@ -68,7 +69,7 @@ describe("fixed ChatGPT Web model routes", () => {
   test("Extra High stays routable without granting Pro or Pro-sized context", () => {
     const config = { ...defaultConfig("full"), extraHighAvailable: true, proAvailable: false };
     expect(availableChatGptWebModelRoutes(config).map(route => route.slug))
-      .toEqual(["chatgpt-web/gpt-5.6-sol-instant", "chatgpt-web/gpt-5.6-sol"]);
+      .toEqual(["chatgpt-web/gpt-5.6-sol"]);
     const request = parsed("chatgpt-web/extra-high", "low");
     expect(routeChatGptWebRequest(request, config).adapterEffort).toBe("xhigh");
     expect(request.options.reasoning).toBe("xhigh");
@@ -322,13 +323,13 @@ describe("fixed ChatGPT Web model routes", () => {
 
   test("new families honor effort, gate availability, and separate pinned retained conversations", () => {
     const config = { ...defaultConfig("full"), extraHighAvailable: true, proAvailable: true };
-    for (const effort of ["medium", "high", "xhigh"] as const) {
+    for (const effort of ["low", "medium", "high", "xhigh"] as const) {
       const request = parsed("chatgpt-web/gpt-5.6-sol", effort);
       routeChatGptWebRequest(request, config);
       expect(request.options.reasoning).toBe(effort);
       expect(request._chatgptModelFamily).toBe("5.6");
     }
-    for (const effort of ["low", "max", "ultra", "invented"]) {
+    for (const effort of ["max", "ultra", "invented"]) {
       expect(() => routeChatGptWebRequest(parsed("chatgpt-web/gpt-5.6-sol", effort), config)).toThrow("does not support effort");
     }
     expect(() => routeChatGptWebRequest(parsed("chatgpt-web/gpt-5.6-sol", "xhigh"), {

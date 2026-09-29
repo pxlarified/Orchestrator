@@ -48,7 +48,7 @@ function routedModelPriority(
   const priority = modelPriority(template);
   if (priority === undefined
     || config.subagentProtocol !== "compatibility-v1"
-    || !["chatgpt-web/light", "chatgpt-web/gpt-5.6-sol-instant"].includes(route.slug)) return priority;
+    || route.slug !== "chatgpt-web/light") return priority;
   if (priority === Number.MAX_SAFE_INTEGER) {
     throw new Error("Native Codex model template priority cannot reserve the Compatibility V1 roster");
   }
@@ -103,16 +103,22 @@ export function buildChatGptWebModel(
   if (!templateSlug || templateSlug.startsWith(CHATGPT_WEB_MODEL_PREFIX)) {
     throw new Error("ChatGPT Web model template must be a native Codex model");
   }
-  const limits = resolveChatGptWebContextLimits(route.backendModel, route.adapterEffort, config);
   const efforts = chatGptWebRouteEfforts(route, config);
-  for (const effort of efforts) {
+  const effortLimits = efforts.map(effort => {
     const adapterEffort = route.supportedCodexEfforts ? effort : route.adapterEffort;
     if (adapterEffort === "ultra") throw new Error("Ultra is not a browser effort");
-    const candidate = resolveChatGptWebContextLimits(route.backendModel, adapterEffort, config);
-    if (JSON.stringify(candidate) !== JSON.stringify(limits)) {
-      throw new Error(`Cannot group different context budgets under ${route.slug}`);
-    }
-  }
+    return resolveChatGptWebContextLimits(route.backendModel, adapterEffort, config);
+  });
+  // Codex exposes one context/compaction budget per model row, even when reasoning settings have
+  // different ChatGPT limits. Advertise the smallest grouped budget so every selectable effort is
+  // safe; the adapter still enforces the exact per-effort limits at request time.
+  const contextWindow = Math.min(...effortLimits.map(limits => limits.contextWindow));
+  const autoCompactTokenLimit = Math.min(...effortLimits.map(limits => limits.autoCompactTokenLimit));
+  const limits = {
+    contextWindow,
+    autoCompactTokenLimit,
+    effectiveContextWindowPercent: Math.round((autoCompactTokenLimit / contextWindow) * 100),
+  };
   const multiAgentVersion = routedSubagentVersion(template, config);
   const priority = routedModelPriority(template, route, config);
   const model: JsonObject = {
@@ -143,7 +149,7 @@ export function buildChatGptWebModel(
     supported_reasoning_levels: efforts.map(effort => reasoningLevel(template, effort,
       efforts.length === 1 ? route.displayName
         : route.backendModel === "gpt-5.6-luna" ? effort === "low" ? "Ordinary Luna" : "Think"
-          : `${route.displayName} — ${effort === "xhigh" ? "Extra High" : effort}`)),
+          : `${route.displayName} — ${effort === "low" ? "Light" : effort === "medium" ? "Medium" : effort === "high" ? "High" : "Extra High"}`)),
     context_window: limits.contextWindow,
     max_context_window: limits.contextWindow,
     effective_context_window_percent: limits.effectiveContextWindowPercent,

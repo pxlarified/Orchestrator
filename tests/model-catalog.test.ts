@@ -93,11 +93,19 @@ describe("native /models augmentation", () => {
       expect((model.supported_reasoning_levels as Array<{ effort: string }>).map(level => level.effort))
         .toEqual([...chatGptWebRouteEfforts(route, config)]);
     }
-    expect((web[1]!.supported_reasoning_levels as Array<{ effort: string }>).map(level => level.effort))
-      .toEqual(["medium", "high", "xhigh"]);
-    expect(() => buildChatGptWebModel(originalModels[1], {
-      ...CHATGPT_WEB_MODEL_ROUTES[1]!, supportedCodexEfforts: ["low", "medium"],
-    }, { ...config, proAvailable: false })).toThrow("Cannot group different context budgets");
+    expect((web[0]!.supported_reasoning_levels as Array<{ effort: string; description: string }>).map(level => [level.effort, level.description]))
+      .toEqual([
+        ["low", "GPT-5.6 Sol (Web) — Light"],
+        ["medium", "GPT-5.6 Sol (Web) — Medium"],
+        ["high", "GPT-5.6 Sol (Web) — High"],
+        ["xhigh", "GPT-5.6 Sol (Web) — Extra High"],
+      ]);
+    expect(buildChatGptWebModel(originalModels[1], CHATGPT_WEB_MODEL_ROUTES[0]!, {
+      ...config, proAvailable: false,
+    })).toMatchObject({
+      context_window: 41_000,
+      auto_compact_token_limit: 32_000,
+    });
   });
 
   test("publishes Bigger Context limits in the Codex model catalog", () => {
@@ -132,8 +140,7 @@ describe("native /models augmentation", () => {
 
     expect(spawnOverrides).toEqual([
       "gpt-5.6-sol",
-      ...CHATGPT_WEB_MODEL_ROUTES.slice(1).map(route => route.slug),
-      "chatgpt-web/gpt-5.6-sol-instant",
+      ...CHATGPT_WEB_MODEL_ROUTES.map(route => route.slug),
     ]);
     expect(models.find(model => model.slug === "chatgpt-web/light")?.priority).toBe(3);
   });
@@ -184,7 +191,7 @@ describe("native /models augmentation", () => {
     const models = second.models as Array<Record<string, unknown>>;
     const web = models.filter(model => String(model.slug).startsWith("chatgpt-web/"));
     expect(web.map(model => model.slug)).toEqual([
-      "chatgpt-web/gpt-5.6-sol-instant", "chatgpt-web/gpt-5.6-sol",
+      "chatgpt-web/gpt-5.6-sol",
       "chatgpt-web/light", "chatgpt-web/medium", "chatgpt-web/high", "chatgpt-web/extra-high",
     ]);
     expect(web.every(model => model.tool_mode === null)).toBe(true);
@@ -196,7 +203,6 @@ describe("native /models augmentation", () => {
       autoCompactTokenLimit: model.auto_compact_token_limit,
     }))).toEqual([
       { contextWindow: 41_000, effectiveContextWindowPercent: 78, autoCompactTokenLimit: 32_000 },
-      { contextWindow: 90_000, effectiveContextWindowPercent: 89, autoCompactTokenLimit: 80_000 },
       { contextWindow: 41_000, effectiveContextWindowPercent: 78, autoCompactTokenLimit: 32_000 },
       { contextWindow: 90_000, effectiveContextWindowPercent: 89, autoCompactTokenLimit: 80_000 },
       { contextWindow: 90_000, effectiveContextWindowPercent: 89, autoCompactTokenLimit: 80_000 },
@@ -279,15 +285,11 @@ describe("native /models augmentation", () => {
     expect(models[1]!.auto_compact_token_limit).toBe(270_000);
     for (const [index, model] of models.slice(3).entries()) {
       const route = availableChatGptWebModelRoutes(config, true)[index]!;
-      const limits = resolveChatGptWebContextLimits(
-        route.backendModel,
-        route.adapterEffort,
-        config,
-      );
-      expect(model.context_window).toBe(limits.contextWindow);
-      expect(model.max_context_window).toBe(limits.contextWindow);
-      expect(model.effective_context_window_percent).toBe(limits.effectiveContextWindowPercent);
-      expect(model.auto_compact_token_limit).toBe(limits.autoCompactTokenLimit);
+      const expected = buildChatGptWebModel(originalModels[1], route, config);
+      expect(model.context_window).toBe(expected.context_window);
+      expect(model.max_context_window).toBe(expected.max_context_window);
+      expect(model.effective_context_window_percent).toBe(expected.effective_context_window_percent);
+      expect(model.auto_compact_token_limit).toBe(expected.auto_compact_token_limit);
     }
   });
 
@@ -320,7 +322,7 @@ describe("native /models augmentation", () => {
     const result = augmentNativeModelCatalog(native, defaultConfig("full"));
     const web = (result.models as Array<Record<string, unknown>>)
       .filter(model => String(model.slug).startsWith("chatgpt-web/"));
-    expect(web.length).toBe(5);
+    expect(web.length).toBe(4);
     expect(web.every(model => model.shell_type === "shell_command")).toBe(true);
     expect(web.every(model => model.tool_mode === null)).toBe(true);
   });
@@ -336,7 +338,7 @@ describe("native /models augmentation", () => {
     const web = (result.models as Array<Record<string, unknown>>)
       .filter(model => String(model.slug).startsWith("chatgpt-web/"));
 
-    expect(web).toHaveLength(5);
+    expect(web).toHaveLength(4);
     expect(web.every(model => model.supported_in_api === true)).toBe(true);
     expect((result.models as Array<Record<string, unknown>>).slice(0, models.length))
       .toEqual(models);

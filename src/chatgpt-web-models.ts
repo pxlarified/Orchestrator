@@ -388,30 +388,30 @@ export const CHATGPT_WEB_LEGACY_MODEL_ROUTES: readonly ChatGptWebAutomaticModelR
   },
 ];
 
-/** Group only efforts with identical context and compaction budgets. */
+const CHATGPT_WEB_LEGACY_SOL_INSTANT_MODEL_ROUTE: ChatGptWebAutomaticModelRoute = {
+  slug: "chatgpt-web/gpt-5.6-sol-instant",
+  displayName: "GPT-5.6 Sol Instant (Web)",
+  description: "Legacy GPT-5.6 Sol Instant route. New catalog entries expose Instant as Light on GPT-5.6 Sol (Web).",
+  interactionMode: "automatic",
+  backendModel: CHATGPT_WEB_BACKEND_MODEL,
+  modelFamily: "5.6",
+  codexEffort: "low",
+  adapterEffort: "low",
+  requiresPro: false,
+  legacy: true,
+};
+
 export const CHATGPT_WEB_MODEL_ROUTES: readonly ChatGptWebAutomaticModelRoute[] = [
-  {
-    slug: "chatgpt-web/gpt-5.6-sol-instant",
-    displayName: "GPT-5.6 Sol Instant (Web)",
-    description: "GPT-5.6 Sol Instant through ChatGPT, with its own context and compaction budget.",
-    interactionMode: "automatic",
-    backendModel: CHATGPT_WEB_BACKEND_MODEL,
-    modelFamily: "5.6",
-    codexEffort: "low",
-    adapterEffort: "low",
-    supportedCodexEfforts: ["low"],
-    requiresPro: false,
-  },
   {
     slug: "chatgpt-web/gpt-5.6-sol",
     displayName: "GPT-5.6 Sol (Web)",
-    description: "GPT-5.6 Sol through ChatGPT with Medium, High, or account-supported Extra High reasoning.",
+    description: "GPT-5.6 Sol through ChatGPT. Light selects Instant; Medium, High, and account-supported Extra High select reasoning modes.",
     interactionMode: "automatic",
     backendModel: CHATGPT_WEB_BACKEND_MODEL,
     modelFamily: "5.6",
     codexEffort: "high",
     adapterEffort: "high",
-    supportedCodexEfforts: ["medium", "high", "xhigh"],
+    supportedCodexEfforts: ["low", "medium", "high", "xhigh"],
     requiresPro: false,
   },
   {
@@ -446,6 +446,7 @@ const routesBySlug = new Map(
     CHATGPT_WEB_ZERO_RISK_PRO_MODEL_ROUTE,
     ...CHATGPT_WEB_LUNA_MODEL_ROUTES,
     ...CHATGPT_WEB_MODEL_ROUTES,
+    CHATGPT_WEB_LEGACY_SOL_INSTANT_MODEL_ROUTE,
     CHATGPT_WEB_LEGACY_LUNA_MODEL_ROUTE,
     CHATGPT_WEB_LUNA_THINK_MODEL_ROUTE,
     ...CHATGPT_WEB_LEGACY_MODEL_ROUTES,
