@@ -9,9 +9,6 @@ export type Surface = "browser" | "setup" | "mcp" | "activity" | "limits" | "set
 export interface LauncherState {
   version: 1;
   language: Language | null;
-  onboardingComplete: boolean;
-  githubOpened: boolean;
-  xOpened: boolean;
   autoStart: boolean;
   keepRunningOnClose: boolean;
   showBrowserDuringTurns: boolean;
@@ -130,8 +127,6 @@ export interface LauncherApi {
   getLimits(): Promise<LimitsSnapshot>;
   setupLimits(): Promise<LimitsSnapshot>;
   setLanguage(language: Language): Promise<LauncherState>;
-  openSocial(target: "github" | "x"): Promise<LauncherState>;
-  completeOnboarding(language: Language, browserInteractionMode: BrowserInteractionMode): Promise<LauncherState>;
   openExternal(url: string): Promise<boolean>;
   setBrowserBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<boolean>;
   setBrowserSurfaceActive(active: boolean): Promise<BrowserState>;

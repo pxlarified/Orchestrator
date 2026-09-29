@@ -8,9 +8,6 @@ const SESSION_REFRESH_REMINDER_INTERVAL_MS = 48 * 60 * 60 * 1000;
 const DEFAULT_STATE = Object.freeze({
   version: 1,
   language: null,
-  onboardingComplete: false,
-  githubOpened: false,
-  xOpened: false,
   autoStart: true,
   keepRunningOnClose: true,
   showBrowserDuringTurns: true,
@@ -39,13 +36,13 @@ function readState(filePath) {
     if (!parsed || parsed.version !== 1) return { ...DEFAULT_STATE };
     const state = { ...DEFAULT_STATE, ...parsed };
     delete state.bridgeEnabled;
+    delete state.onboardingComplete;
+    delete state.githubOpened;
+    delete state.xOpened;
     if (state.language !== null && (typeof state.language !== "string" || !Object.hasOwn(languages, state.language))) {
       state.language = DEFAULT_STATE.language;
     }
     for (const key of [
-      "onboardingComplete",
-      "githubOpened",
-      "xOpened",
       "autoStart",
       "keepRunningOnClose",
       "showBrowserDuringTurns",
@@ -63,7 +60,6 @@ function readState(filePath) {
       state.browserInteractionMode = DEFAULT_STATE.browserInteractionMode;
     }
     if (state.coreSetupComplete !== true) {
-      if (state.onboardingComplete !== true) state.browserInteractionMode = "automatic";
       state.zeroRiskProEnabled = false;
     }
     if (state.browserSmokeVersion !== null

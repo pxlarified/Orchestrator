@@ -10,7 +10,7 @@ const {
   validateSidebarState,
 } = require("../electron/state.cjs");
 
-test("launcher state persists onboarding, language, and autostart atomically", () => {
+test("launcher state persists language and autostart atomically", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-launcher-state-"));
   const file = path.join(root, "state.json");
   try {
@@ -18,9 +18,6 @@ test("launcher state persists onboarding, language, and autostart atomically", (
     assert.deepEqual(store.read(), {
       version: 1,
       language: null,
-      onboardingComplete: false,
-      githubOpened: false,
-      xOpened: false,
       autoStart: true,
       keepRunningOnClose: true,
       showBrowserDuringTurns: true,
@@ -39,7 +36,6 @@ test("launcher state persists onboarding, language, and autostart atomically", (
     });
     store.update({
       language: "zh-CN",
-      onboardingComplete: true,
       keepRunningOnClose: false,
       browserSmokePassed: true,
       browserSmokeVersion: "0.2.0",
@@ -47,9 +43,6 @@ test("launcher state persists onboarding, language, and autostart atomically", (
     assert.deepEqual(createStateStore(file).read(), {
       version: 1,
       language: "zh-CN",
-      onboardingComplete: true,
-      githubOpened: false,
-      xOpened: false,
       autoStart: true,
       keepRunningOnClose: false,
       showBrowserDuringTurns: true,
@@ -90,15 +83,13 @@ test("every supported launcher language survives a state update and reload", () 
   try {
     for (const language of Object.keys(languages)) {
       const store = createStateStore(file);
-      store.update({ language, onboardingComplete: true });
+      store.update({ language });
       assert.equal(createStateStore(file).read().language, language);
-      assert.equal(createStateStore(file).read().onboardingComplete, true);
     }
     for (const language of ["__proto__", "constructor", "unknown", [], {}]) {
-      fs.writeFileSync(file, JSON.stringify({ version: 1, language, onboardingComplete: true }));
+      fs.writeFileSync(file, JSON.stringify({ version: 1, language }));
       const state = createStateStore(file).read();
       assert.equal(state.language, null);
-      assert.equal(state.onboardingComplete, true);
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -127,9 +118,6 @@ test("persisted sidebar corruption is repaired without changing the rest of laun
     assert.deepEqual(createStateStore(file).read(), {
       version: 1,
       language: "zh-CN",
-      onboardingComplete: false,
-      githubOpened: false,
-      xOpened: false,
       autoStart: true,
       keepRunningOnClose: true,
       showBrowserDuringTurns: true,
@@ -151,13 +139,13 @@ test("persisted sidebar corruption is repaired without changing the rest of laun
   }
 });
 
-test("browser interaction defaults to Automatic and preserves a completed onboarding choice", () => {
+test("browser interaction defaults to Automatic and preserves a saved choice before core setup", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-interaction-state-"));
   const file = path.join(root, "state.json");
   try {
     const store = createStateStore(file);
     assert.equal(store.read().browserInteractionMode, "automatic");
-    store.update({ browserInteractionMode: "manual", onboardingComplete: true });
+    store.update({ browserInteractionMode: "manual" });
     assert.equal(createStateStore(file).read().browserInteractionMode, "manual");
     assert.equal(createStateStore(file).read().zeroRiskProEnabled, false);
     store.update({ coreSetupComplete: true, zeroRiskProEnabled: true, experimentalFreshConversationPerTurn: true });
@@ -170,11 +158,10 @@ test("browser interaction defaults to Automatic and preserves a completed onboar
       browserInteractionMode: "manual",
       zeroRiskProEnabled: true,
     }));
-    assert.equal(createStateStore(file).read().browserInteractionMode, "automatic");
+    assert.equal(createStateStore(file).read().browserInteractionMode, "manual");
     assert.equal(createStateStore(file).read().zeroRiskProEnabled, false);
     fs.writeFileSync(file, JSON.stringify({
       version: 1,
-      onboardingComplete: true,
       browserInteractionMode: "manual",
     }));
     assert.equal(createStateStore(file).read().browserInteractionMode, "manual");
@@ -190,4 +177,31 @@ test("session refresh reminders are deferred by exactly 48 hours", () => {
   assert.equal(SESSION_REFRESH_REMINDER_INTERVAL_MS, 48 * 60 * 60 * 1000);
   assert.equal(nextSessionRefreshReminderAt(now), "2026-08-07T12:00:00.000Z");
   assert.throws(() => nextSessionRefreshReminderAt(Number.NaN), /must be finite/);
+});
+
+test("legacy onboarding and social flags are discarded without losing preferences", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-web-gpt-legacy-state-"));
+  const file = path.join(root, "state.json");
+  try {
+    for (const onboardingComplete of [false, true]) {
+      fs.writeFileSync(file, JSON.stringify({
+        version: 1,
+        language: "ja",
+        onboardingComplete,
+        githubOpened: true,
+        xOpened: false,
+        browserInteractionMode: "manual",
+        autoStart: false,
+      }));
+      const state = createStateStore(file).read();
+      assert.equal(state.language, "ja");
+      assert.equal(state.browserInteractionMode, "manual");
+      assert.equal(state.autoStart, false);
+      for (const key of ["onboardingComplete", "githubOpened", "xOpened"]) {
+        assert.equal(Object.hasOwn(state, key), false);
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

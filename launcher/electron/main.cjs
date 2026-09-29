@@ -452,7 +452,7 @@ function createWindow({ logger, stateStore, windowStatePath, startHidden }) {
     window.on(event, () => send("launcher:window-state-changed", windowStateSnapshot(window)));
   }
   window.once("ready-to-show", () => {
-    if (!state.onboardingComplete && !Number.isFinite(windowState.bounds.x)) window.center();
+    if (!Number.isFinite(windowState.bounds.x)) window.center();
     if (windowState.maximized) window.maximize();
     if (windowState.fullscreen) window.setFullScreen(true);
     if (mainWindow === window) mainWindowReadyToShow = true;
@@ -527,7 +527,7 @@ function registerIpc({ logger, stateStore }) {
     "launcher:use-saved-chats", "launcher:zero-risk-pro", "launcher:browser-interaction-mode",
     "launcher:connector-name", "launcher:mcp-verify", "launcher:doctor", "launcher:cancel-turns",
     "launcher:browser-passkey-login", "launcher:browser-logout", "launcher:browser-smoke",
-    "launcher:limits-setup", "launcher:update-install", "launcher:complete-onboarding",
+    "launcher:limits-setup", "launcher:update-install",
   ]);
   const handle = (channel, handler) => registerLoggedIpc(ipcMain, logger, channel, async (...args) => {
     if (runtimeChannels.has(channel)) await runtimeStartup;
@@ -568,30 +568,6 @@ function registerIpc({ logger, stateStore }) {
     updateTrayMenu(state.language);
     return state;
   });
-  handle("launcher:open-social", async (_event, target) => {
-    const url = target === "github" ? GITHUB_URL : target === "x" ? X_URL : null;
-    if (!url) throw new Error("Unknown social target");
-    await openWebUrl(url);
-    const patch = target === "github" ? { githubOpened: true } : { xOpened: true };
-    return stateStore.update(patch);
-  });
-  handle("launcher:complete-onboarding", (_event, language, rawInteractionMode) => {
-    const current = stateStore.read();
-    if (!current.githubOpened || !current.xOpened) throw new Error("Open the GitHub and X pages before continuing");
-    if (current.autoStart) setAutostart(app, true);
-    const next = stateStore.update({
-      language: validateLanguage(language),
-      browserInteractionMode: validateBrowserInteractionMode(rawInteractionMode),
-      onboardingComplete: true,
-    });
-    updateTrayMenu(next.language);
-    logger.info("launcher.onboarding_completed", {
-      language: next.language,
-      browserInteractionMode: next.browserInteractionMode,
-    });
-    return next;
-  });
-
   handle("launcher:open-external", async (_event, url) => {
     if (!ALLOWED_EXTERNAL_URLS.has(url)) throw new Error("External URL is not allowlisted");
     await openWebUrl(url);
@@ -1098,10 +1074,8 @@ async function start() {
   limitsController = new LimitsController(path.join(app.getPath("userData"), "limits.json"), {
     getInteractionMode: () => stateStore.read().browserInteractionMode,
   });
-  if (IS_DEV_PROFILE && !stateStore.read().onboardingComplete) {
+  if (IS_DEV_PROFILE && stateStore.read().autoStart) {
     stateStore.update({
-      language: stateStore.read().language || "en",
-      onboardingComplete: true,
       autoStart: false,
     });
   }
@@ -1118,7 +1092,6 @@ async function start() {
   }
   const autostart = IS_DEV_PROFILE ? { supported: false, enabled: false } : getAutostart(app);
   if (!IS_DEV_PROFILE
-    && stateStore.read().onboardingComplete
     && autostart.supported
     && stateStore.read().autoStart !== autostart.enabled) {
     setAutostart(app, stateStore.read().autoStart);
@@ -1127,7 +1100,7 @@ async function start() {
     filePath: path.join(app.getPath("logs"), "launcher.jsonl"),
     publish: (record) => send("launcher:log", record),
   });
-  const startHidden = process.argv.includes("--hidden") && stateStore.read().onboardingComplete;
+  const startHidden = process.argv.includes("--hidden");
   nativeTheme.themeSource = "system";
   mainWindow = createWindow({
     logger,

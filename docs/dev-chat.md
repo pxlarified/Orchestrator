@@ -10,7 +10,7 @@ usable.
 - Use the repository-pinned Bun version.
 - Install a launcher built from the same working tree.
 - Start the isolated launcher with `bun run dev:launcher`.
-- It skips the normal marketing onboarding and opens the setup surface directly. Sign in inside the
+- It opens the setup surface directly. Sign in inside the
   window labelled **DEV**. This may be a different ChatGPT account.
 - Run its browser smoke test and initialize the DEV profile. Complete MCP setup only when testing
   simulated tool rounds; browser, effort, context-limit, and compaction work in browser-only mode.
