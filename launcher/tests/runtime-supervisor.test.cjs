@@ -7,7 +7,11 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { packagedRuntimePaths } = require("../electron/runtime-command.cjs");
-const { linuxDesktopEntry, requireAutostartState } = require("../electron/autostart.cjs");
+const {
+  launchHookCommand,
+  launcherExecutable,
+  launchScript,
+} = require("../electron/launch-with-codex.cjs");
 const {
   MAX_RESTARTS_PER_WINDOW,
   RuntimeSupervisor,
@@ -78,49 +82,41 @@ test("packaged runtime paths are native on Windows and Unix", () => {
   assert.equal(path.basename(linux.entrypoint), "cli.js");
 });
 
-test("Linux autostart launches the durable AppImage invisibly", () => {
-  const entry = linuxDesktopEntry(
-    { getPath: () => "/tmp/transient-electron" },
-    "/home/example/Applications/Codex Web GPT.AppImage",
-  );
-  assert.match(
-    entry,
-    /^Exec="\/home\/example\/Applications\/Codex Web GPT\.AppImage" --hidden$/m,
-  );
-  assert.doesNotMatch(entry, /APPIMAGE_EXTRACT_AND_RUN/);
-  assert.match(entry, /^Terminal=false$/m);
-  assert.match(entry, /^X-GNOME-Autostart-enabled=true$/m);
+test("Launch with Codex starts the launcher hidden on Windows and Unix", () => {
+  const windows = launchScript("C:\\Program Files\\Codex Web GPT\\Codex Web GPT.exe", "win32");
+  assert.match(windows, /Start-Process -FilePath 'C:\\Program Files\\Codex Web GPT\\Codex Web GPT\.exe' -ArgumentList '--hidden'/);
+  assert.match(windows, /-WindowStyle Hidden/);
+
+  const unix = launchScript("/opt/Codex Web GPT/codex-web-gpt", "linux");
+  assert.match(unix, /^#!\/bin\/sh/m);
+  assert.match(unix, /nohup '\/opt\/Codex Web GPT\/codex-web-gpt' --hidden >\/dev\/null 2>&1 &/);
 });
 
-test("Linux autostart escapes desktop-entry field codes in executable paths", () => {
-  const entry = linuxDesktopEntry(
-    { getPath: () => "/tmp/transient-electron" },
-    "/home/example/100% ready/Codex Web GPT.AppImage",
+test("Launch with Codex safely quotes launcher and hook paths", () => {
+  const unix = launchScript("/home/example/Jan's Apps/Codex Web GPT.AppImage", "linux");
+  assert.match(unix, /Jan'"'"'s Apps/);
+  assert.equal(
+    launchHookCommand("C:\\Users\\Example User\\Codex Web GPT\\launch-with-codex.ps1", "win32"),
+    'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\Users\\Example User\\Codex Web GPT\\launch-with-codex.ps1"',
   );
-  assert.match(entry, /"\/home\/example\/100%% ready\/Codex Web GPT\.AppImage" --hidden/);
+  assert.throws(() => launchHookCommand('C:\\bad"path.ps1', "win32"), /script path is invalid/);
 });
 
-test("Linux autostart follows the stable installer wrapper across app updates", () => {
-  const previous = process.env.CODEX_WEB_GPT_LAUNCHER_EXECUTABLE;
-  process.env.CODEX_WEB_GPT_LAUNCHER_EXECUTABLE = "/home/example/.local/bin/codex-web-gpt";
-  try {
-    const entry = linuxDesktopEntry({ getPath: () => "/tmp/versioned-appimage-mount" });
-    assert.match(entry, /"\/home\/example\/\.local\/bin\/codex-web-gpt" --hidden/);
-  } finally {
-    if (previous === undefined) delete process.env.CODEX_WEB_GPT_LAUNCHER_EXECUTABLE;
-    else process.env.CODEX_WEB_GPT_LAUNCHER_EXECUTABLE = previous;
-  }
+test("Linux Launch with Codex follows the stable launcher across app updates", () => {
+  const app = { getPath: () => "/tmp/versioned-appimage-mount" };
+  assert.equal(launcherExecutable(app, {
+    platform: "linux",
+    environment: { CODEX_WEB_GPT_LAUNCHER_EXECUTABLE: "/home/example/.local/bin/codex-web-gpt" },
+  }), "/home/example/.local/bin/codex-web-gpt");
+  assert.equal(launcherExecutable(app, {
+    platform: "linux",
+    environment: { APPIMAGE: "/home/example/Applications/Codex Web GPT.AppImage" },
+  }), "/home/example/Applications/Codex Web GPT.AppImage");
 });
 
-test("launcher autostart fails explicitly when the operating system rejects the requested state", () => {
-  assert.deepEqual(
-    requireAutostartState({ supported: true, enabled: true }, true),
-    { supported: true, enabled: true },
-  );
-  assert.throws(
-    () => requireAutostartState({ supported: true, enabled: false }, true),
-    /did not enable launcher autostart/,
-  );
+test("Launch with Codex uses the app executable outside Linux", () => {
+  const app = { getPath: name => name === "exe" ? "C:\\Program Files\\Codex Web GPT\\Codex Web GPT.exe" : "" };
+  assert.equal(launcherExecutable(app, { platform: "win32", environment: {} }), app.getPath("exe"));
 });
 
 test("launcher runtime ownership rejects a different browser descriptor", () => {

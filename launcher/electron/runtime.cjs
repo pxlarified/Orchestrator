@@ -1060,6 +1060,30 @@ class RuntimeHost {
     return { ...result, mode };
   }
 
+  async setLaunchWithCodex(enabled, command) {
+    this.assertProductionProfile("Launch with Codex");
+    if (typeof enabled !== "boolean" || typeof command !== "string" || !command.trim()) {
+      throw new Error("Launch with Codex settings are invalid");
+    }
+    const result = await this.run("launch-with-codex", [
+      "launcher",
+      "launch-with-codex",
+      enabled ? "enable" : "disable",
+      "--command",
+      command,
+    ], {
+      environment: { ...process.env, CODEX_HOME: this.codexHome },
+      message: enabled ? "Enabling Launch with Codex" : "Disabling Launch with Codex",
+      successMessage: enabled ? "Launch with Codex enabled" : "Launch with Codex disabled",
+      timeoutMs: 30_000,
+    });
+    const status = JSON.parse(result.stdout);
+    if (status?.enabled !== enabled) {
+      throw new Error("Launch with Codex did not persist the requested state");
+    }
+    return status;
+  }
+
   async setupDevCore() {
     if (this.launcherProfile !== "development") {
       throw new Error("DEV profile setup requires the isolated DEV launcher");

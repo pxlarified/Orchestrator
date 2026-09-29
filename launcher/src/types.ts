@@ -154,7 +154,7 @@ export interface LauncherApi {
   }): Promise<{ ok: boolean; stdout: string }>;
   setConnectorNameSuffix(suffix: string): Promise<LauncherState>;
   setMcpStep(step: number): Promise<LauncherState>;
-  setAutostart(enabled: boolean): Promise<{ state: LauncherState; supported: boolean; enabled: boolean }>;
+  setLaunchWithCodex(enabled: boolean): Promise<{ state: LauncherState; supported: boolean; enabled: boolean }>;
   setBiggerContext(enabled: boolean): Promise<LauncherState>;
   setSkillAttachments(enabled: boolean): Promise<LauncherState>;
   setFreshConversationPerTurn(enabled: boolean): Promise<LauncherState>;
