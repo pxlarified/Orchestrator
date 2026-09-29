@@ -255,6 +255,16 @@ test("DEV launcher exposes its profile and supervises only its Full-mode MCP run
   assert.doesNotMatch(electronMain, /IS_DEV_PROFILE && key === "experimentalBiggerContext"/);
 });
 
+test("Launch with Codex replaces operating-system login startup", () => {
+  assert.match(appSource, /copy\.launchWithCodex/);
+  assert.match(appSource, /api!\.setLaunchWithCodex\(checked\)/);
+  assert.match(preloadSource, /setLaunchWithCodex:[\s\S]*?launcher:launch-with-codex/);
+  assert.match(electronMain, /handle\("launcher:launch-with-codex"[\s\S]*?setAutostart\(app, false\)[\s\S]*?runtimeHost\.setLaunchWithCodex/);
+  assert.match(electronMain, /ensureLaunchWithCodexScript\([\s\S]*?setAutostart\(app, false\)[\s\S]*?runtimeHost\.setLaunchWithCodex\(stateStore\.read\(\)\.autoStart/);
+  assert.doesNotMatch(preloadSource, /launcher:autostart/);
+  assert.doesNotMatch(appSource, /launchAtLogin|setAutostart/);
+});
+
 test("macOS passkey sign-in is additive to the unchanged embedded login action", () => {
   assert.match(appSource, /onAction=\{openLogin\}/);
   assert.match(appSource, /<BrowserSurface[\s\S]*?operation=\{operation\}[\s\S]*?platform=\{snapshot\.platform\}/);

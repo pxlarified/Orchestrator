@@ -22,7 +22,8 @@ const {
 const { BrowserHost, navigationErrorForLog } = require("./browser-host.cjs");
 const { BrowserControlServer } = require("./control-server.cjs");
 const { releaseRetainedConversation } = require("./retained-turn-release.cjs");
-const { getAutostart, setAutostart } = require("./autostart.cjs");
+const { setAutostart } = require("./autostart.cjs");
+const { ensureLaunchWithCodexScript } = require("./launch-with-codex.cjs");
 const {
   createLogger,
   exportSanitizedLogs,
@@ -331,7 +332,7 @@ function createTray(logger, language) {
 }
 
 function showMainWindow() {
-  // A Windows login launch may still be materializing the packaged runtime when the user opens
+  // A hidden launch may still be materializing the packaged runtime when the user opens
   // the desktop shortcut. Electron delivers `second-instance` immediately, before `createWindow`
   // has produced anything to show. Preserve that foreground request until the real window reaches
   // `ready-to-show`; otherwise the already-running `--hidden` instance silently consumes it.
@@ -852,13 +853,16 @@ function registerIpc({ logger, stateStore }) {
     return stateStore.update({ mcpGuideStep: step });
   });
 
-  handle("launcher:autostart", (_event, enabled) => {
+  handle("launcher:launch-with-codex", async (_event, enabled) => {
     if (IS_DEV_PROFILE) throw new Error("The isolated DEV launcher is started explicitly from the repository CLI");
     const desired = enabled === true;
-    const autostart = setAutostart(app, desired);
+    const launch = ensureLaunchWithCodexScript({ app, coreHome: CORE_HOME });
+    setAutostart(app, false);
+    const status = await runtimeHost.setLaunchWithCodex(desired, launch.command);
     return {
-      state: stateStore.update({ autoStart: desired }),
-      ...autostart,
+      state: stateStore.update({ autoStart: status.enabled }),
+      supported: true,
+      enabled: status.enabled,
     };
   });
   handle("launcher:bigger-context", async (_event, enabled) => {
@@ -1079,12 +1083,6 @@ async function start() {
       codexRestartRequired: false,
     });
   }
-  const autostart = IS_DEV_PROFILE ? { supported: false, enabled: false } : getAutostart(app);
-  if (!IS_DEV_PROFILE
-    && autostart.supported
-    && stateStore.read().autoStart !== autostart.enabled) {
-    setAutostart(app, stateStore.read().autoStart);
-  }
   const logger = createLogger({
     filePath: path.join(app.getPath("logs"), "launcher.jsonl"),
     publish: (record) => send("launcher:log", record),
@@ -1133,6 +1131,11 @@ async function start() {
     supervisor: runtimeSupervisor,
     getBrowserInteractionMode: () => stateStore.read().browserInteractionMode,
   });
+  if (!IS_DEV_PROFILE) {
+    const launch = ensureLaunchWithCodexScript({ app, coreHome: CORE_HOME });
+    setAutostart(app, false);
+    await runtimeHost.setLaunchWithCodex(stateStore.read().autoStart, launch.command);
+  }
   const configuredInteractionMode = runtimeHost.runtimeConfigSnapshot().config?.browserInteractionMode;
   if ((configuredInteractionMode === "automatic" || configuredInteractionMode === "manual")
     && stateStore.read().browserInteractionMode !== configuredInteractionMode) {

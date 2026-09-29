@@ -30,6 +30,7 @@ import { installRuntimeKeyBytes, managedRuntimeKeyPath, stopTunnel, tunnelStatus
 import { getTunnelServiceStatus, restartTunnelService, startTunnelService, stopTunnelService, uninstallTunnelService } from "./tunnel-service";
 import { VERSION } from "./version";
 import { runDevCommand } from "./dev-chat/cli";
+import { setCodexLaunchWithCodexHook } from "./codex-launch-hook";
 
 const HELP = `codex-chatgpt-web ${VERSION}
 
@@ -613,6 +614,16 @@ async function main(): Promise<void> {
     const action = args.shift();
     if (action !== "interrupt") throw new Error("Hook command must be: hook interrupt");
     await interruptHookCommand(args);
+  }
+  else if (command === "launcher") {
+    const action = args.shift();
+    const mode = args.shift();
+    const launchCommand = takeOption(args, "--command");
+    assertNoArgs(args);
+    if (action !== "launch-with-codex" || (mode !== "enable" && mode !== "disable") || !launchCommand) {
+      throw new Error("Launcher command must be: launcher launch-with-codex <enable|disable> --command COMMAND");
+    }
+    stdout.write(`${JSON.stringify(setCodexLaunchWithCodexHook(launchCommand, mode === "enable"))}\n`);
   }
   else if (command === "tunnel") await tunnelCommand(args);
   else if (command === "open") await openCommand(args);

@@ -224,8 +224,8 @@ tunnel configuration.
 
 The launcher is the sole process supervisor on macOS, Windows, and Linux. It starts the optional
 tunnel first, waits for healthy/ready evidence, starts the Responses daemon, and then waits for its
-versioned health payload. Native login items or an owner-local XDG autostart file launch the app
-hidden after sign-in. A marker containing only launcher-owned PIDs lets doctor distinguish the
+versioned health payload. An owner-local Codex SessionStart hook launches the app
+hidden when Codex opens. A marker containing only launcher-owned PIDs lets doctor distinguish the
 launcher runtime from a stale or external process. Legacy macOS launchd services are drained and
 removed during an explicit launcher migration; launchd remains only for the advanced terminal-only
 mode.

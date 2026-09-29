@@ -1539,10 +1539,10 @@ function SettingsSurface({
     <ContentSurface narrow title={devProfile ? copy.devSettingsTitle : copy.settingsTitle}>
       <SectionHeading label={copy.general} />
       <div className="settings-list">
-        {!devProfile ? <SettingRow body={copy.launchAtLoginBody} flushAfter label={copy.launchAtLogin}>
+        {!devProfile ? <SettingRow body={copy.launchWithCodexBody} flushAfter label={copy.launchWithCodex}>
           <Switch
             checked={snapshot.state.autoStart}
-            onChange={(checked) => void api!.setAutostart(checked)
+            onChange={(checked) => void api!.setLaunchWithCodex(checked)
               .then((result) => updateState(result.state))
               .catch((cause) => setError(messageOf(cause)))}
           />
